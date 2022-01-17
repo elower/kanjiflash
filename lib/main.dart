@@ -1,115 +1,315 @@
 import 'package:flutter/material.dart';
+import 'package:learning_digital_ink_recognition/learning_digital_ink_recognition.dart';
+import 'package:learning_input_image/learning_input_image.dart';
+import 'package:provider/provider.dart';
+
+import 'painter.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const MaterialApp(
+    title: 'Navigation Basics',
+    home: FirstRoute(),
+  ));
+}
+
+class FirstRoute extends StatelessWidget {
+  const FirstRoute({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('First Route'),
+      ),
+      body: Center(
+        child: ElevatedButton(
+          child: const Text('Open route'),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => MyApp()),
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
-
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
+        primarySwatch: Colors.lightBlue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+        primaryTextTheme: TextTheme(
+          headline6: TextStyle(color: Colors.white),
+        ),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: ChangeNotifierProvider(
+        create: (_) => DigitalInkRecognitionState(),
+        child: DigitalInkRecognitionPage(),
+      ),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({Key? key, required this.title}) : super(key: key);
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
+class DigitalInkRecognitionPage extends StatefulWidget {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  _DigitalInkRecognitionPageState createState() =>
+      _DigitalInkRecognitionPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _DigitalInkRecognitionPageState extends State<DigitalInkRecognitionPage> {
+  final String _model = 'ja';
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  DigitalInkRecognitionState get state => Provider.of(context, listen: false);
+  late DigitalInkRecognition _recognition;
+
+  double get _width => MediaQuery.of(context).size.width;
+  double _height = 200;
+
+  @override
+  void initState() {
+    _recognition = DigitalInkRecognition(model: _model);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _recognition.dispose();
+    super.dispose();
+  }
+
+  // need to call start() at the first time before painting the ink
+  Future<void> _init() async {
+    //print('Writing Area: ($_width, $_height)');
+    await _recognition.start(writingArea: Size(_width, _height));
+    // always check the availability of model before being used for recognition
+    await _checkModel();
+  }
+
+  // reset the ink recognition
+  Future<void> _reset() async {
+    state.reset();
+    await _recognition.start(writingArea: Size(_width, _height));
+  }
+
+  Future<void> _checkModel() async {
+    bool isDownloaded = await DigitalInkModelManager.isDownloaded(_model);
+
+    if (!isDownloaded) {
+      await DigitalInkModelManager.download(_model);
+    }
+  }
+
+  Future<void> _actionDown(Offset point) async {
+    state.startWriting(point);
+    await _recognition.actionDown(point);
+  }
+
+  Future<void> _actionMove(Offset point) async {
+    state.writePoint(point);
+    await _recognition.actionMove(point);
+  }
+
+  Future<void> _actionUp() async {
+    state.stopWriting();
+    await _recognition.actionUp();
+  }
+
+  Future<void> _startRecognition() async {
+    if (state.isNotProcessing) {
+      state.startProcessing();
+      // always check the availability of model before being used for recognition
+      await _checkModel();
+      state.data = await _recognition.process();
+      state.stopProcessing();
+      if (state._terms[state._termIdx] == state.toCompleteString()) {
+        print("You got it!" + state.toCompleteString());
+        state.termIdx += 1;
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        centerTitle: true,
+        title: const Text('ML Digital Ink Recognition'),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
-        ),
+      body: Column(
+        children: [
+          Center(
+            child:
+                Consumer<DigitalInkRecognitionState>(builder: (_, state, __) {
+              return Center(
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 18),
+                  child: Text(
+                    state.currentTerm(),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          Builder(
+            builder: (_) {
+              _init();
+
+              return GestureDetector(
+                onScaleStart: (details) async =>
+                    await _actionDown(details.localFocalPoint),
+                onScaleUpdate: (details) async =>
+                    await _actionMove(details.localFocalPoint),
+                onScaleEnd: (details) async => await _actionUp(),
+                child: Consumer<DigitalInkRecognitionState>(
+                  builder: (_, state, __) => CustomPaint(
+                    painter: DigitalInkPainter(writings: state.writings),
+                    child: Container(
+                      width: _width,
+                      height: _height,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          SizedBox(height: 20),
+          NormalPinkButton(
+            text: 'Start Recognition',
+            onPressed: _startRecognition,
+          ),
+          SizedBox(height: 5),
+          NormalBlueButton(
+            text: 'Reset Canvas',
+            onPressed: _reset,
+          ),
+          ElevatedButton(
+            child: const Text('Open route'),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => FirstRoute()),
+              );
+            },
+          ),
+          SizedBox(height: 15),
+          Center(
+            child:
+                Consumer<DigitalInkRecognitionState>(builder: (_, state, __) {
+              if (state.isNotProcessing && state.isNotEmpty) {
+                return Center(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 18),
+                    child: Text(
+                      state.toCompleteString(),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              if (state.isProcessing) {
+                return Center(
+                  child: Container(
+                    width: 36,
+                    height: 20,
+                    color: Colors.transparent,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
+
+              return Container();
+            }),
+          ),
+          Expanded(child: Container()),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
+  }
+}
+
+class DigitalInkRecognitionState extends ChangeNotifier {
+  List<List<Offset>> _writings = [];
+  List<RecognitionCandidate> _data = [];
+  bool isProcessing = false;
+  int _termIdx = 0;
+  List<String> _terms = ["犬", "猫"];
+
+  List<List<Offset>> get writings => _writings;
+  List<RecognitionCandidate> get data => _data;
+  int get termIdx => _termIdx;
+  bool get isNotProcessing => !isProcessing;
+  bool get isEmpty => _data.isEmpty;
+  bool get isNotEmpty => _data.isNotEmpty;
+
+  List<Offset> _writing = [];
+
+  void reset() {
+    _writings = [];
+    notifyListeners();
+  }
+
+  void startWriting(Offset point) {
+    _writing = [point];
+    _writings.add(_writing);
+    notifyListeners();
+  }
+
+  void writePoint(Offset point) {
+    if (_writings.isNotEmpty) {
+      _writings[_writings.length - 1].add(point);
+      notifyListeners();
+    }
+  }
+
+  void stopWriting() {
+    _writing = [];
+    notifyListeners();
+  }
+
+  void startProcessing() {
+    isProcessing = true;
+    notifyListeners();
+  }
+
+  void stopProcessing() {
+    isProcessing = false;
+    notifyListeners();
+  }
+
+  set data(List<RecognitionCandidate> data) {
+    _data = data;
+    notifyListeners();
+  }
+
+  set termIdx(int termIdx) {
+    _termIdx = termIdx;
+    notifyListeners();
+  }
+
+  @override
+  String toString() {
+    return isNotEmpty ? _data.first.text : '';
+  }
+
+  String toCompleteString() {
+    return isNotEmpty ? _data.first.text : '';
+  }
+
+  String currentTerm() {
+    return "Draw this: " + _terms[_termIdx];
   }
 }
